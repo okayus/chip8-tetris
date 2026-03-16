@@ -1,14 +1,42 @@
 -- tetris.ch8l: CHIP-8 TETRIS
--- Phase 2: ピース移動 + 入力
+-- Phase 3: 着地 + 衝突検出 + ランダムピース
 
 -- ============================================================
 -- スプライトデータ (各セル 2×2px)
 -- ============================================================
 
--- テトロミノ (Phase 2 では T ピースのみ使用)
+-- テトロミノ 7種 (全て sprite(4) = 8px幅 × 4px高)
+
+-- I ピース (横): ████████
+--                ████████
+let piece_i: sprite(4) = [0b11111111, 0b11111111, 0b00000000, 0b00000000];
+
+-- O ピース: ████
+--           ████
+let piece_o: sprite(4) = [0b11110000, 0b11110000, 0b11110000, 0b11110000];
+
 -- T ピース: ██████
 --             ██
 let piece_t: sprite(4) = [0b11111100, 0b11111100, 0b01100000, 0b01100000];
+
+-- S ピース:   ████
+--           ████
+let piece_s: sprite(4) = [0b00111100, 0b00111100, 0b11110000, 0b11110000];
+
+-- Z ピース: ████
+--             ████
+let piece_z: sprite(4) = [0b11110000, 0b11110000, 0b00111100, 0b00111100];
+
+-- L ピース: ██
+--           ██████
+let piece_l: sprite(4) = [0b11000000, 0b11000000, 0b11111100, 0b11111100];
+
+-- J ピース:     ██
+--           ██████
+let piece_j: sprite(4) = [0b00110000, 0b00110000, 0b11111100, 0b11111100];
+
+-- 底の壁 (64px幅)
+let floor: sprite(1) = [0b11111111];
 
 -- ============================================================
 -- メイン: ゲームループ
@@ -17,54 +45,196 @@ let piece_t: sprite(4) = [0b11111100, 0b11111100, 0b01100000, 0b01100000];
 fn main() -> () {
   clear();
 
-  -- ピースの初期位置
+  -- 底の壁を描画 (y=30, 画面全幅)
+  let fx: u8 = 0;
+  loop {
+    if fx > 56 {
+      break;
+    };
+    draw(floor, fx, 30);
+    fx = fx + 8;
+  };
+
+  -- ゲーム変数
   let px: u8 = 28;
   let py: u8 = 0;
+  let piece: u8 = 2;
+  let score: u8 = 0;
+  let alive: u8 = 1;
 
-  -- 初期描画
+  -- 初期ピース描画 (T ピース)
   draw(piece_t, px, py);
+  set_delay(20);
 
   -- ゲームループ
   loop {
-    -- ディレイタイマーで落下タイミングを制御
+    if alive == 0 {
+      break;
+    };
+
+    -- 落下タイミング
     let dt: u8 = delay();
     if dt == 0 {
-      -- タイマー切れ: 1行落下
-      -- 現在位置を消去 (XOR)
-      draw(piece_t, px, py);
+      -- 現在位置を消去
+      if piece == 0 { draw(piece_i, px, py); };
+      if piece == 1 { draw(piece_o, px, py); };
+      if piece == 2 { draw(piece_t, px, py); };
+      if piece == 3 { draw(piece_s, px, py); };
+      if piece == 4 { draw(piece_z, px, py); };
+      if piece == 5 { draw(piece_l, px, py); };
+      if piece == 6 { draw(piece_j, px, py); };
+
+      -- 1行落下
       py = py + 2;
 
-      -- 画面下端チェック (32 - 4 = 28)
-      if py > 28 {
+      -- 新位置に描画して衝突チェック
+      let col: bool = false;
+      if piece == 0 { col = draw(piece_i, px, py); };
+      if piece == 1 { col = draw(piece_o, px, py); };
+      if piece == 2 { col = draw(piece_t, px, py); };
+      if piece == 3 { col = draw(piece_s, px, py); };
+      if piece == 4 { col = draw(piece_z, px, py); };
+      if piece == 5 { col = draw(piece_l, px, py); };
+      if piece == 6 { col = draw(piece_j, px, py); };
+
+      if col {
+        -- 衝突! 元に戻して固定
+        -- 描画したものを消す (XOR)
+        if piece == 0 { draw(piece_i, px, py); };
+        if piece == 1 { draw(piece_o, px, py); };
+        if piece == 2 { draw(piece_t, px, py); };
+        if piece == 3 { draw(piece_s, px, py); };
+        if piece == 4 { draw(piece_z, px, py); };
+        if piece == 5 { draw(piece_l, px, py); };
+        if piece == 6 { draw(piece_j, px, py); };
+
+        -- 元の位置に戻す
+        py = py - 2;
+
+        -- 元の位置に再描画 (固定)
+        if piece == 0 { draw(piece_i, px, py); };
+        if piece == 1 { draw(piece_o, px, py); };
+        if piece == 2 { draw(piece_t, px, py); };
+        if piece == 3 { draw(piece_s, px, py); };
+        if piece == 4 { draw(piece_z, px, py); };
+        if piece == 5 { draw(piece_l, px, py); };
+        if piece == 6 { draw(piece_j, px, py); };
+
+        -- 新しいピースを生成
+        piece = random(6);
+        px = 28;
         py = 0;
+
+        -- 新ピースを描画して、もし衝突ならゲームオーバー
+        let col2: bool = false;
+        if piece == 0 { col2 = draw(piece_i, px, py); };
+        if piece == 1 { col2 = draw(piece_o, px, py); };
+        if piece == 2 { col2 = draw(piece_t, px, py); };
+        if piece == 3 { col2 = draw(piece_s, px, py); };
+        if piece == 4 { col2 = draw(piece_z, px, py); };
+        if piece == 5 { col2 = draw(piece_l, px, py); };
+        if piece == 6 { col2 = draw(piece_j, px, py); };
+
+        if col2 {
+          alive = 0;
+        };
+
+        score = score + 1;
       };
 
-      -- 新位置に描画
-      draw(piece_t, px, py);
-
-      -- 次の落下まで待機 (約0.5秒 = 30フレーム)
-      set_delay(15);
+      set_delay(20);
     };
 
-    -- キー入力チェック
-    -- Q (CHIP-8 key 4) = 左移動
-    let k_left: u8 = 4;
-    if is_key_pressed(k_left) {
+    -- キー入力: 左移動 (Q = key 4)
+    let k4: u8 = 4;
+    if is_key_pressed(k4) {
       if px > 2 {
-        draw(piece_t, px, py);
+        if piece == 0 { draw(piece_i, px, py); };
+        if piece == 1 { draw(piece_o, px, py); };
+        if piece == 2 { draw(piece_t, px, py); };
+        if piece == 3 { draw(piece_s, px, py); };
+        if piece == 4 { draw(piece_z, px, py); };
+        if piece == 5 { draw(piece_l, px, py); };
+        if piece == 6 { draw(piece_j, px, py); };
+
         px = px - 2;
-        draw(piece_t, px, py);
+
+        let lc: bool = false;
+        if piece == 0 { lc = draw(piece_i, px, py); };
+        if piece == 1 { lc = draw(piece_o, px, py); };
+        if piece == 2 { lc = draw(piece_t, px, py); };
+        if piece == 3 { lc = draw(piece_s, px, py); };
+        if piece == 4 { lc = draw(piece_z, px, py); };
+        if piece == 5 { lc = draw(piece_l, px, py); };
+        if piece == 6 { lc = draw(piece_j, px, py); };
+
+        if lc {
+          -- 衝突: 戻す
+          if piece == 0 { draw(piece_i, px, py); };
+          if piece == 1 { draw(piece_o, px, py); };
+          if piece == 2 { draw(piece_t, px, py); };
+          if piece == 3 { draw(piece_s, px, py); };
+          if piece == 4 { draw(piece_z, px, py); };
+          if piece == 5 { draw(piece_l, px, py); };
+          if piece == 6 { draw(piece_j, px, py); };
+          px = px + 2;
+          if piece == 0 { draw(piece_i, px, py); };
+          if piece == 1 { draw(piece_o, px, py); };
+          if piece == 2 { draw(piece_t, px, py); };
+          if piece == 3 { draw(piece_s, px, py); };
+          if piece == 4 { draw(piece_z, px, py); };
+          if piece == 5 { draw(piece_l, px, py); };
+          if piece == 6 { draw(piece_j, px, py); };
+        };
       };
     };
 
-    -- R (CHIP-8 key 6) = 右移動 (chip8-lang にはまだ定数式評価がないため直値)
-    let k_right: u8 = 6;
-    if is_key_pressed(k_right) {
-      if px < 58 {
-        draw(piece_t, px, py);
+    -- キー入力: 右移動 (R = key 6)
+    let k6: u8 = 6;
+    if is_key_pressed(k6) {
+      if px < 56 {
+        if piece == 0 { draw(piece_i, px, py); };
+        if piece == 1 { draw(piece_o, px, py); };
+        if piece == 2 { draw(piece_t, px, py); };
+        if piece == 3 { draw(piece_s, px, py); };
+        if piece == 4 { draw(piece_z, px, py); };
+        if piece == 5 { draw(piece_l, px, py); };
+        if piece == 6 { draw(piece_j, px, py); };
+
         px = px + 2;
-        draw(piece_t, px, py);
+
+        let rc: bool = false;
+        if piece == 0 { rc = draw(piece_i, px, py); };
+        if piece == 1 { rc = draw(piece_o, px, py); };
+        if piece == 2 { rc = draw(piece_t, px, py); };
+        if piece == 3 { rc = draw(piece_s, px, py); };
+        if piece == 4 { rc = draw(piece_z, px, py); };
+        if piece == 5 { rc = draw(piece_l, px, py); };
+        if piece == 6 { rc = draw(piece_j, px, py); };
+
+        if rc {
+          if piece == 0 { draw(piece_i, px, py); };
+          if piece == 1 { draw(piece_o, px, py); };
+          if piece == 2 { draw(piece_t, px, py); };
+          if piece == 3 { draw(piece_s, px, py); };
+          if piece == 4 { draw(piece_z, px, py); };
+          if piece == 5 { draw(piece_l, px, py); };
+          if piece == 6 { draw(piece_j, px, py); };
+          px = px - 2;
+          if piece == 0 { draw(piece_i, px, py); };
+          if piece == 1 { draw(piece_o, px, py); };
+          if piece == 2 { draw(piece_t, px, py); };
+          if piece == 3 { draw(piece_s, px, py); };
+          if piece == 4 { draw(piece_z, px, py); };
+          if piece == 5 { draw(piece_l, px, py); };
+          if piece == 6 { draw(piece_j, px, py); };
+        };
       };
     };
   };
+
+  -- ゲームオーバー: スコア表示
+  clear();
+  draw_digit(score, 28, 12);
+  let end: u8 = wait_key();
 }
