@@ -1,11 +1,10 @@
 -- tetris.ch8l: CHIP-8 TETRIS
--- Phase 5: タイトル画面 + ゲームオーバー改善
+-- chip8-lang の破壊的変更対応: ローカル変数を削減
 
 -- ============================================================
 -- スプライトデータ (各セル 2×2px)
 -- ============================================================
 
--- テトロミノ 7種 (全て sprite(4) = 8px幅 × 4px高)
 let piece_i: sprite(4) = [0b11111111, 0b11111111, 0b00000000, 0b00000000];
 let piece_o: sprite(4) = [0b11110000, 0b11110000, 0b11110000, 0b11110000];
 let piece_t: sprite(4) = [0b11111100, 0b11111100, 0b01100000, 0b01100000];
@@ -13,11 +12,7 @@ let piece_s: sprite(4) = [0b00111100, 0b00111100, 0b11110000, 0b11110000];
 let piece_z: sprite(4) = [0b11110000, 0b11110000, 0b00111100, 0b00111100];
 let piece_l: sprite(4) = [0b11000000, 0b11000000, 0b11111100, 0b11111100];
 let piece_j: sprite(4) = [0b00110000, 0b00110000, 0b11111100, 0b11111100];
-
--- 底の壁
 let floor: sprite(1) = [0b11111111];
-
--- 横線 (装飾用)
 let hline: sprite(1) = [0b11111111];
 
 -- ============================================================
@@ -26,27 +21,31 @@ let hline: sprite(1) = [0b11111111];
 
 fn title_screen() -> () {
   clear();
-  -- テトロミノを散りばめてタイトルロゴ風に
   draw(piece_t, 6, 4);
   draw(piece_i, 18, 4);
   draw(piece_s, 30, 4);
   draw(piece_z, 42, 4);
   draw(piece_o, 54, 4);
-
   draw(piece_l, 12, 12);
   draw(piece_j, 28, 12);
   draw(piece_t, 44, 12);
-
-  -- 装飾ライン
   let lx: u8 = 0;
   loop {
     if lx > 56 { break; };
     draw(hline, lx, 20);
     lx = lx + 8;
   };
-
-  -- "Press any key" (キー待ち)
   wait_key();
+}
+
+-- 底壁の描画 (main の前に呼ぶ)
+fn draw_floor() -> () {
+  let x: u8 = 0;
+  loop {
+    if x > 56 { break; };
+    draw(floor, x, 30);
+    x = x + 8;
+  };
 }
 
 -- ============================================================
@@ -56,27 +55,19 @@ fn title_screen() -> () {
 fn main() -> () {
   title_screen();
   clear();
+  draw_floor();
 
-  -- 底の壁を描画 (y=30)
-  let fx: u8 = 0;
-  loop {
-    if fx > 56 { break; };
-    draw(floor, fx, 30);
-    fx = fx + 8;
-  };
-
-  -- スコア表示 (右上: x=56, y=0)
+  -- ゲーム変数 (8個に削減、テンポラリ用に 7 レジスタ確保)
   let score: u8 = 0;
-  draw_digit(score, 56, 0);
-
-  -- ゲーム変数
   let px: u8 = 28;
   let py: u8 = 0;
   let piece: u8 = 2;
   let alive: u8 = 1;
   let speed: u8 = 25;
+  let dt: u8 = 0;
+  let col: bool = false;
 
-  -- 初期ピース描画
+  draw_digit(score, 56, 0);
   draw(piece_t, px, py);
   set_delay(speed);
 
@@ -84,8 +75,7 @@ fn main() -> () {
   loop {
     if alive == 0 { break; };
 
-    -- 落下タイミング
-    let dt: u8 = delay();
+    dt = delay();
     if dt == 0 {
       -- 消去
       if piece == 0 { draw(piece_i, px, py); };
@@ -99,7 +89,7 @@ fn main() -> () {
       py = py + 2;
 
       -- 描画 + 衝突チェック
-      let col: bool = false;
+      col = false;
       if piece == 0 { col = draw(piece_i, px, py); };
       if piece == 1 { col = draw(piece_o, px, py); };
       if piece == 2 { col = draw(piece_t, px, py); };
@@ -126,15 +116,11 @@ fn main() -> () {
         if piece == 5 { draw(piece_l, px, py); };
         if piece == 6 { draw(piece_j, px, py); };
 
-        -- 着地サウンド
         set_sound(2);
-
-        -- スコア更新
         draw_digit(score, 56, 0);
         score = score + 1;
         draw_digit(score, 56, 0);
 
-        -- 速度アップ (最低5)
         if speed > 8 {
           speed = speed - 3;
         };
@@ -146,24 +132,23 @@ fn main() -> () {
         py = 0;
 
         -- 新ピース描画 + ゲームオーバーチェック
-        let col2: bool = false;
-        if piece == 0 { col2 = draw(piece_i, px, py); };
-        if piece == 1 { col2 = draw(piece_o, px, py); };
-        if piece == 2 { col2 = draw(piece_t, px, py); };
-        if piece == 3 { col2 = draw(piece_s, px, py); };
-        if piece == 4 { col2 = draw(piece_z, px, py); };
-        if piece == 5 { col2 = draw(piece_l, px, py); };
-        if piece == 6 { col2 = draw(piece_j, px, py); };
+        col = false;
+        if piece == 0 { col = draw(piece_i, px, py); };
+        if piece == 1 { col = draw(piece_o, px, py); };
+        if piece == 2 { col = draw(piece_t, px, py); };
+        if piece == 3 { col = draw(piece_s, px, py); };
+        if piece == 4 { col = draw(piece_z, px, py); };
+        if piece == 5 { col = draw(piece_l, px, py); };
+        if piece == 6 { col = draw(piece_j, px, py); };
 
-        if col2 { alive = 0; };
+        if col { alive = 0; };
       };
 
       set_delay(speed);
     };
 
     -- 左移動 (Q = key 4)
-    let k4: u8 = 4;
-    if is_key_pressed(k4) {
+    if is_key_pressed(4) {
       if px > 2 {
         if piece == 0 { draw(piece_i, px, py); };
         if piece == 1 { draw(piece_o, px, py); };
@@ -173,15 +158,15 @@ fn main() -> () {
         if piece == 5 { draw(piece_l, px, py); };
         if piece == 6 { draw(piece_j, px, py); };
         px = px - 2;
-        let lc: bool = false;
-        if piece == 0 { lc = draw(piece_i, px, py); };
-        if piece == 1 { lc = draw(piece_o, px, py); };
-        if piece == 2 { lc = draw(piece_t, px, py); };
-        if piece == 3 { lc = draw(piece_s, px, py); };
-        if piece == 4 { lc = draw(piece_z, px, py); };
-        if piece == 5 { lc = draw(piece_l, px, py); };
-        if piece == 6 { lc = draw(piece_j, px, py); };
-        if lc {
+        col = false;
+        if piece == 0 { col = draw(piece_i, px, py); };
+        if piece == 1 { col = draw(piece_o, px, py); };
+        if piece == 2 { col = draw(piece_t, px, py); };
+        if piece == 3 { col = draw(piece_s, px, py); };
+        if piece == 4 { col = draw(piece_z, px, py); };
+        if piece == 5 { col = draw(piece_l, px, py); };
+        if piece == 6 { col = draw(piece_j, px, py); };
+        if col {
           if piece == 0 { draw(piece_i, px, py); };
           if piece == 1 { draw(piece_o, px, py); };
           if piece == 2 { draw(piece_t, px, py); };
@@ -202,8 +187,7 @@ fn main() -> () {
     };
 
     -- 右移動 (R = key 6)
-    let k6: u8 = 6;
-    if is_key_pressed(k6) {
+    if is_key_pressed(6) {
       if px < 56 {
         if piece == 0 { draw(piece_i, px, py); };
         if piece == 1 { draw(piece_o, px, py); };
@@ -213,15 +197,15 @@ fn main() -> () {
         if piece == 5 { draw(piece_l, px, py); };
         if piece == 6 { draw(piece_j, px, py); };
         px = px + 2;
-        let rc: bool = false;
-        if piece == 0 { rc = draw(piece_i, px, py); };
-        if piece == 1 { rc = draw(piece_o, px, py); };
-        if piece == 2 { rc = draw(piece_t, px, py); };
-        if piece == 3 { rc = draw(piece_s, px, py); };
-        if piece == 4 { rc = draw(piece_z, px, py); };
-        if piece == 5 { rc = draw(piece_l, px, py); };
-        if piece == 6 { rc = draw(piece_j, px, py); };
-        if rc {
+        col = false;
+        if piece == 0 { col = draw(piece_i, px, py); };
+        if piece == 1 { col = draw(piece_o, px, py); };
+        if piece == 2 { col = draw(piece_t, px, py); };
+        if piece == 3 { col = draw(piece_s, px, py); };
+        if piece == 4 { col = draw(piece_z, px, py); };
+        if piece == 5 { col = draw(piece_l, px, py); };
+        if piece == 6 { col = draw(piece_j, px, py); };
+        if col {
           if piece == 0 { draw(piece_i, px, py); };
           if piece == 1 { draw(piece_o, px, py); };
           if piece == 2 { draw(piece_t, px, py); };
@@ -242,8 +226,7 @@ fn main() -> () {
     };
 
     -- 即落下 (S = key 8)
-    let k8: u8 = 8;
-    if is_key_pressed(k8) {
+    if is_key_pressed(8) {
       set_delay(1);
     };
   };
@@ -251,15 +234,10 @@ fn main() -> () {
   -- ゲームオーバー
   set_sound(10);
   clear();
-
-  -- 装飾ピース
   draw(piece_t, 4, 2);
   draw(piece_z, 52, 2);
   draw(piece_s, 4, 24);
   draw(piece_l, 52, 24);
-
-  -- スコア表示 (中央)
   draw_digit(score, 28, 12);
-
   wait_key();
 }
