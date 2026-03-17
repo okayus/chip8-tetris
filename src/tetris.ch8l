@@ -1,6 +1,12 @@
--- tetris.ch8l: CHIP-8 TETRIS
+-- tetris.ch8l: CHIP-8 TETRIS (関数型スタイル)
 --
--- draw_piece() -> bool に完全統合 (chip8-lang #23 修正済み)
+-- Piece enum + match + random_enum + try_move 関数化
+
+-- ============================================================
+-- 型定義
+-- ============================================================
+
+enum Piece { I, O, T, S, Z, L, J }
 
 -- ============================================================
 -- スプライトデータ
@@ -16,23 +22,37 @@ let piece_j: sprite(4) = [0b00110000, 0b00110000, 0b11111100, 0b11111100];
 let floor: sprite(1) = [0b11111111];
 
 -- ============================================================
--- ピース描画 (match でディスパッチ、衝突フラグを返す)
+-- ピース描画 (enum + match)
 -- ============================================================
 
-fn draw_piece(p: u8, x: u8, y: u8) -> bool {
+fn draw_piece(p: Piece, x: u8, y: u8) -> bool {
   match p {
-    0 => draw(piece_i, x, y),
-    1 => draw(piece_o, x, y),
-    2 => draw(piece_t, x, y),
-    3 => draw(piece_s, x, y),
-    4 => draw(piece_z, x, y),
-    5 => draw(piece_l, x, y),
-    6 => draw(piece_j, x, y),
+    Piece::I => draw(piece_i, x, y),
+    Piece::O => draw(piece_o, x, y),
+    Piece::T => draw(piece_t, x, y),
+    Piece::S => draw(piece_s, x, y),
+    Piece::Z => draw(piece_z, x, y),
+    Piece::L => draw(piece_l, x, y),
+    Piece::J => draw(piece_j, x, y),
+  }
+}
+
+-- 移動試行: erase → draw → (衝突なら revert)
+-- 成功なら true、失敗なら false を返す
+fn try_move(p: Piece, ox: u8, oy: u8, nx: u8, ny: u8) -> bool {
+  draw_piece(p, ox, oy);
+  let col: bool = draw_piece(p, nx, ny);
+  if col {
+    draw_piece(p, nx, ny);
+    draw_piece(p, ox, oy);
+    false
+  } else {
+    true
   }
 }
 
 -- ============================================================
--- 描画ユーティリティ
+-- 画面ユーティリティ
 -- ============================================================
 
 fn draw_hline(y: u8) -> () {
@@ -58,11 +78,6 @@ fn title_screen() -> () {
   wait_key();
 }
 
-fn init_field() -> () {
-  clear();
-  draw_hline(30);
-}
-
 fn gameover_screen(score: u8) -> () {
   set_sound(10);
   clear();
@@ -80,78 +95,61 @@ fn gameover_screen(score: u8) -> () {
 
 fn main() -> () {
   title_screen();
-  init_field();
+  clear();
+  draw_hline(30);
 
-  let score: u8 = 0;
+  let piece: Piece = Piece::T;
   let px: u8 = 28;
   let py: u8 = 0;
-  let piece: u8 = 2;
-  let alive: u8 = 1;
+  let score: u8 = 0;
   let speed: u8 = 25;
-  let dt: u8 = 0;
-  let col: bool = false;
 
   draw_digit(score, 56, 0);
   draw_piece(piece, px, py);
   set_delay(speed);
 
   loop {
-    if alive == 0 { break; };
-
-    dt = delay();
-    if dt == 0 {
-      draw_piece(piece, px, py);
-      py = py + 2;
-      col = draw_piece(piece, px, py);
-
-      if col {
-        draw_piece(piece, px, py);
-        py = py - 2;
-        draw_piece(piece, px, py);
-
+    -- 落下ステップ
+    if delay() == 0 {
+      if try_move(piece, px, py, px, py + 2) {
+        py = py + 2;
+      } else {
+        -- 着地
         set_sound(2);
         draw_digit(score, 56, 0);
         score = score + 1;
         draw_digit(score, 56, 0);
         if speed > 8 { speed = speed - 3; };
 
-        piece = random(7);
-        if piece > 6 { piece = 0; };
+        -- 新ピース生成
+        piece = random_enum(Piece);
         px = 28;
         py = 0;
-        col = draw_piece(piece, px, py);
-        if col { alive = 0; };
+        if draw_piece(piece, px, py) { break; };
       };
 
       set_delay(speed);
     };
 
+    -- 左移動 (Q = key 4)
     if is_key_pressed(4) {
       if px > 2 {
-        draw_piece(piece, px, py);
-        px = px - 2;
-        col = draw_piece(piece, px, py);
-        if col {
-          draw_piece(piece, px, py);
-          px = px + 2;
-          draw_piece(piece, px, py);
+        if try_move(piece, px, py, px - 2, py) {
+          px = px - 2;
         };
       };
     };
 
+    -- 右移動 (R = key 6)
     if is_key_pressed(6) {
       if px < 56 {
-        draw_piece(piece, px, py);
-        px = px + 2;
-        col = draw_piece(piece, px, py);
-        if col {
-          draw_piece(piece, px, py);
-          px = px - 2;
-          draw_piece(piece, px, py);
+        if try_move(piece, px, py, px + 2, py) {
+          px = px + 2;
         };
       };
     };
 
+    -- 即落下 (S = key 8)
     if is_key_pressed(8) { set_delay(1); };
   };
 
