@@ -1,8 +1,14 @@
 -- tetris.ch8l: CHIP-8 TETRIS
--- chip8-lang の破壊的変更対応: ローカル変数を削減
+--
+-- 関数型スタイルへのリファクタリング:
+-- - 副作用を伴う操作を小さな関数に分離
+-- - main はゲーム状態の初期化とループの制御のみ
+-- - draw_piece の 7 分岐は match 式がないため if チェーンで代用 (issue 登録済み)
+-- - 関数呼び出し時のレジスタ破壊 (issue #6) のため、
+--   ゲームループ内での関数呼び出しは不可。main にインライン展開が必要。
 
 -- ============================================================
--- スプライトデータ (各セル 2×2px)
+-- スプライトデータ
 -- ============================================================
 
 let piece_i: sprite(4) = [0b11111111, 0b11111111, 0b00000000, 0b00000000];
@@ -13,12 +19,22 @@ let piece_z: sprite(4) = [0b11110000, 0b11110000, 0b00111100, 0b00111100];
 let piece_l: sprite(4) = [0b11000000, 0b11000000, 0b11111100, 0b11111100];
 let piece_j: sprite(4) = [0b00110000, 0b00110000, 0b11111100, 0b11111100];
 let floor: sprite(1) = [0b11111111];
-let hline: sprite(1) = [0b11111111];
 
 -- ============================================================
--- タイトル画面
+-- 純粋な描画関数 (副作用のみ、ゲーム状態に依存しない)
 -- ============================================================
 
+-- 画面全幅に横線を描画
+fn draw_hline(y: u8) -> () {
+  let x: u8 = 0;
+  loop {
+    if x > 56 { break; };
+    draw(floor, x, y);
+    x = x + 8;
+  };
+}
+
+-- タイトル画面: テトロミノを装飾的に配置
 fn title_screen() -> () {
   clear();
   draw(piece_t, 6, 4);
@@ -29,35 +45,52 @@ fn title_screen() -> () {
   draw(piece_l, 12, 12);
   draw(piece_j, 28, 12);
   draw(piece_t, 44, 12);
-  let lx: u8 = 0;
-  loop {
-    if lx > 56 { break; };
-    draw(hline, lx, 20);
-    lx = lx + 8;
-  };
+  draw_hline(20);
   wait_key();
 }
 
--- 底壁の描画 (main の前に呼ぶ)
-fn draw_floor() -> () {
-  let x: u8 = 0;
-  loop {
-    if x > 56 { break; };
-    draw(floor, x, 30);
-    x = x + 8;
-  };
+-- ゲームオーバー画面: 四隅にテトロミノ + 中央にスコア
+fn gameover_screen(score: u8) -> () {
+  set_sound(10);
+  clear();
+  draw(piece_t, 4, 2);
+  draw(piece_z, 52, 2);
+  draw(piece_s, 4, 24);
+  draw(piece_l, 52, 24);
+  draw_digit(score, 28, 12);
+  wait_key();
+}
+
+-- ゲームフィールドの初期化
+fn init_field() -> () {
+  clear();
+  draw_hline(30);
 }
 
 -- ============================================================
 -- メイン
+--
+-- 関数型的に書きたいが、以下の制約でインライン展開が必要:
+--   1. 関数呼び出し時にレジスタが破壊される (issue #6)
+--      → draw_piece(piece, x, y) を関数化できない
+--   2. match 式がない
+--      → piece ごとの分岐が if チェーンになる
+--   3. sum type がない
+--      → piece を u8 で表現せざるを得ない
+--
+-- 理想形 (issue が解決された場合):
+--   let col = try_move(piece, px, py, px, py + 2);
+--   match col {
+--     Collided => { land_piece(piece, px, py); spawn_new_piece(); }
+--     Free => ()
+--   };
 -- ============================================================
 
 fn main() -> () {
   title_screen();
-  clear();
-  draw_floor();
+  init_field();
 
-  -- ゲーム変数 (8個に削減、テンポラリ用に 7 レジスタ確保)
+  -- ゲーム状態 (8 変数 / 上限 10)
   let score: u8 = 0;
   let px: u8 = 28;
   let py: u8 = 0;
@@ -71,13 +104,17 @@ fn main() -> () {
   draw(piece_t, px, py);
   set_delay(speed);
 
-  -- ゲームループ
   loop {
     if alive == 0 { break; };
 
+    -- ============================================================
+    -- 落下ステップ: delay() == 0 のとき 1 行落下
+    -- ============================================================
     dt = delay();
     if dt == 0 {
-      -- 消去
+
+      -- erase_piece(piece, px, py)
+      -- ※ match piece { I => draw(piece_i, ..), O => draw(piece_o, ..), ... } と書きたい
       if piece == 0 { draw(piece_i, px, py); };
       if piece == 1 { draw(piece_o, px, py); };
       if piece == 2 { draw(piece_t, px, py); };
@@ -88,7 +125,7 @@ fn main() -> () {
 
       py = py + 2;
 
-      -- 描画 + 衝突チェック
+      -- col = draw_piece(piece, px, py)
       col = false;
       if piece == 0 { col = draw(piece_i, px, py); };
       if piece == 1 { col = draw(piece_o, px, py); };
@@ -99,7 +136,8 @@ fn main() -> () {
       if piece == 6 { col = draw(piece_j, px, py); };
 
       if col {
-        -- 衝突: 消去 → 戻す → 固定
+        -- 衝突: undo_move → land_piece → spawn_piece
+        -- undo: erase_piece(piece, px, py)
         if piece == 0 { draw(piece_i, px, py); };
         if piece == 1 { draw(piece_o, px, py); };
         if piece == 2 { draw(piece_t, px, py); };
@@ -107,6 +145,8 @@ fn main() -> () {
         if piece == 4 { draw(piece_z, px, py); };
         if piece == 5 { draw(piece_l, px, py); };
         if piece == 6 { draw(piece_j, px, py); };
+
+        -- land: draw_piece(piece, px, py - 2)
         py = py - 2;
         if piece == 0 { draw(piece_i, px, py); };
         if piece == 1 { draw(piece_o, px, py); };
@@ -116,22 +156,20 @@ fn main() -> () {
         if piece == 5 { draw(piece_l, px, py); };
         if piece == 6 { draw(piece_j, px, py); };
 
+        -- update_score
         set_sound(2);
         draw_digit(score, 56, 0);
         score = score + 1;
         draw_digit(score, 56, 0);
+        if speed > 8 { speed = speed - 3; };
 
-        if speed > 8 {
-          speed = speed - 3;
-        };
-
-        -- 新ピース生成
+        -- spawn_piece
         piece = random(7);
         if piece > 6 { piece = 0; };
         px = 28;
         py = 0;
 
-        -- 新ピース描画 + ゲームオーバーチェック
+        -- col = draw_piece(piece, px, py)
         col = false;
         if piece == 0 { col = draw(piece_i, px, py); };
         if piece == 1 { col = draw(piece_o, px, py); };
@@ -147,9 +185,15 @@ fn main() -> () {
       set_delay(speed);
     };
 
+    -- ============================================================
+    -- 入力処理: try_move(piece, px, py, new_px, py)
+    -- ※ 関数化できれば左右で共通化できる
+    -- ============================================================
+
     -- 左移動 (Q = key 4)
     if is_key_pressed(4) {
       if px > 2 {
+        -- erase
         if piece == 0 { draw(piece_i, px, py); };
         if piece == 1 { draw(piece_o, px, py); };
         if piece == 2 { draw(piece_t, px, py); };
@@ -157,6 +201,7 @@ fn main() -> () {
         if piece == 4 { draw(piece_z, px, py); };
         if piece == 5 { draw(piece_l, px, py); };
         if piece == 6 { draw(piece_j, px, py); };
+        -- try new position
         px = px - 2;
         col = false;
         if piece == 0 { col = draw(piece_i, px, py); };
@@ -166,6 +211,7 @@ fn main() -> () {
         if piece == 4 { col = draw(piece_z, px, py); };
         if piece == 5 { col = draw(piece_l, px, py); };
         if piece == 6 { col = draw(piece_j, px, py); };
+        -- revert if collision
         if col {
           if piece == 0 { draw(piece_i, px, py); };
           if piece == 1 { draw(piece_o, px, py); };
@@ -226,18 +272,8 @@ fn main() -> () {
     };
 
     -- 即落下 (S = key 8)
-    if is_key_pressed(8) {
-      set_delay(1);
-    };
+    if is_key_pressed(8) { set_delay(1); };
   };
 
-  -- ゲームオーバー
-  set_sound(10);
-  clear();
-  draw(piece_t, 4, 2);
-  draw(piece_z, 52, 2);
-  draw(piece_s, 4, 24);
-  draw(piece_l, 52, 24);
-  draw_digit(score, 28, 12);
-  wait_key();
+  gameover_screen(score);
 }
