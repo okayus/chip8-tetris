@@ -1,8 +1,6 @@
 -- tetris.ch8l: CHIP-8 TETRIS
 --
--- match 式 + 関数抽出によるリファクタリング
--- draw_piece は衝突フラグの戻り値バグ (chip8-lang #23) のため
--- 消去用 (void) のみ関数化。衝突チェックはインラインの match で実施。
+-- draw_piece() -> bool に完全統合 (chip8-lang #23 修正済み)
 
 -- ============================================================
 -- スプライトデータ
@@ -18,10 +16,10 @@ let piece_j: sprite(4) = [0b00110000, 0b00110000, 0b11111100, 0b11111100];
 let floor: sprite(1) = [0b11111111];
 
 -- ============================================================
--- ピース消去 (戻り値を使わないので関数化安全)
+-- ピース描画 (match でディスパッチ、衝突フラグを返す)
 -- ============================================================
 
-fn erase_piece(p: u8, x: u8, y: u8) -> () {
+fn draw_piece(p: u8, x: u8, y: u8) -> bool {
   match p {
     0 => draw(piece_i, x, y),
     1 => draw(piece_o, x, y),
@@ -30,7 +28,7 @@ fn erase_piece(p: u8, x: u8, y: u8) -> () {
     4 => draw(piece_z, x, y),
     5 => draw(piece_l, x, y),
     6 => draw(piece_j, x, y),
-  };
+  }
 }
 
 -- ============================================================
@@ -78,9 +76,6 @@ fn gameover_screen(score: u8) -> () {
 
 -- ============================================================
 -- メイン
---
--- 衝突チェック付き描画は関数の戻り値バグ (#23) のためインライン match で実施。
--- #23 が修正されれば draw_piece() -> bool に統合可能。
 -- ============================================================
 
 fn main() -> () {
@@ -97,33 +92,22 @@ fn main() -> () {
   let col: bool = false;
 
   draw_digit(score, 56, 0);
-  erase_piece(piece, px, py);
+  draw_piece(piece, px, py);
   set_delay(speed);
 
   loop {
     if alive == 0 { break; };
 
-    -- 落下ステップ
     dt = delay();
     if dt == 0 {
-      erase_piece(piece, px, py);
+      draw_piece(piece, px, py);
       py = py + 2;
-
-      -- 衝突チェック付き描画 (インライン match)
-      col = match piece {
-        0 => draw(piece_i, px, py),
-        1 => draw(piece_o, px, py),
-        2 => draw(piece_t, px, py),
-        3 => draw(piece_s, px, py),
-        4 => draw(piece_z, px, py),
-        5 => draw(piece_l, px, py),
-        6 => draw(piece_j, px, py),
-      };
+      col = draw_piece(piece, px, py);
 
       if col {
-        erase_piece(piece, px, py);
+        draw_piece(piece, px, py);
         py = py - 2;
-        erase_piece(piece, px, py);
+        draw_piece(piece, px, py);
 
         set_sound(2);
         draw_digit(score, 56, 0);
@@ -135,67 +119,39 @@ fn main() -> () {
         if piece > 6 { piece = 0; };
         px = 28;
         py = 0;
-
-        col = match piece {
-          0 => draw(piece_i, px, py),
-          1 => draw(piece_o, px, py),
-          2 => draw(piece_t, px, py),
-          3 => draw(piece_s, px, py),
-          4 => draw(piece_z, px, py),
-          5 => draw(piece_l, px, py),
-          6 => draw(piece_j, px, py),
-        };
+        col = draw_piece(piece, px, py);
         if col { alive = 0; };
       };
 
       set_delay(speed);
     };
 
-    -- 左移動 (Q = key 4)
     if is_key_pressed(4) {
       if px > 2 {
-        erase_piece(piece, px, py);
+        draw_piece(piece, px, py);
         px = px - 2;
-        col = match piece {
-          0 => draw(piece_i, px, py),
-          1 => draw(piece_o, px, py),
-          2 => draw(piece_t, px, py),
-          3 => draw(piece_s, px, py),
-          4 => draw(piece_z, px, py),
-          5 => draw(piece_l, px, py),
-          6 => draw(piece_j, px, py),
-        };
+        col = draw_piece(piece, px, py);
         if col {
-          erase_piece(piece, px, py);
+          draw_piece(piece, px, py);
           px = px + 2;
-          erase_piece(piece, px, py);
+          draw_piece(piece, px, py);
         };
       };
     };
 
-    -- 右移動 (R = key 6)
     if is_key_pressed(6) {
       if px < 56 {
-        erase_piece(piece, px, py);
+        draw_piece(piece, px, py);
         px = px + 2;
-        col = match piece {
-          0 => draw(piece_i, px, py),
-          1 => draw(piece_o, px, py),
-          2 => draw(piece_t, px, py),
-          3 => draw(piece_s, px, py),
-          4 => draw(piece_z, px, py),
-          5 => draw(piece_l, px, py),
-          6 => draw(piece_j, px, py),
-        };
+        col = draw_piece(piece, px, py);
         if col {
-          erase_piece(piece, px, py);
+          draw_piece(piece, px, py);
           px = px - 2;
-          erase_piece(piece, px, py);
+          draw_piece(piece, px, py);
         };
       };
     };
 
-    -- 即落下 (S = key 8)
     if is_key_pressed(8) { set_delay(1); };
   };
 
