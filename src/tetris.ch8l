@@ -1,11 +1,7 @@
 -- tetris.ch8l: CHIP-8 TETRIS
 --
--- 関数型スタイルへのリファクタリング:
--- - 副作用を伴う操作を小さな関数に分離
--- - main はゲーム状態の初期化とループの制御のみ
--- - draw_piece の 7 分岐は match 式がないため if チェーンで代用 (issue 登録済み)
--- - 関数呼び出し時のレジスタ破壊 (issue #6) のため、
---   ゲームループ内での関数呼び出しは不可。main にインライン展開が必要。
+-- match 式 + 関数抽出によるリファクタリング
+-- draw_piece() を関数化し、7-way if チェーン (77行) を match (7行) に集約
 
 -- ============================================================
 -- スプライトデータ
@@ -21,10 +17,26 @@ let piece_j: sprite(4) = [0b00110000, 0b00110000, 0b11111100, 0b11111100];
 let floor: sprite(1) = [0b11111111];
 
 -- ============================================================
--- 純粋な描画関数 (副作用のみ、ゲーム状態に依存しない)
+-- ピース描画 (match 式でディスパッチ)
 -- ============================================================
 
--- 画面全幅に横線を描画
+-- ピースを描画し、衝突フラグを返す (XOR 描画)
+fn draw_piece(p: u8, x: u8, y: u8) -> bool {
+  match p {
+    0 => draw(piece_i, x, y),
+    1 => draw(piece_o, x, y),
+    2 => draw(piece_t, x, y),
+    3 => draw(piece_s, x, y),
+    4 => draw(piece_z, x, y),
+    5 => draw(piece_l, x, y),
+    6 => draw(piece_j, x, y),
+  }
+}
+
+-- ============================================================
+-- 描画ユーティリティ
+-- ============================================================
+
 fn draw_hline(y: u8) -> () {
   let x: u8 = 0;
   loop {
@@ -34,7 +46,6 @@ fn draw_hline(y: u8) -> () {
   };
 }
 
--- タイトル画面: テトロミノを装飾的に配置
 fn title_screen() -> () {
   clear();
   draw(piece_t, 6, 4);
@@ -49,7 +60,11 @@ fn title_screen() -> () {
   wait_key();
 }
 
--- ゲームオーバー画面: 四隅にテトロミノ + 中央にスコア
+fn init_field() -> () {
+  clear();
+  draw_hline(30);
+}
+
 fn gameover_screen(score: u8) -> () {
   set_sound(10);
   clear();
@@ -61,36 +76,14 @@ fn gameover_screen(score: u8) -> () {
   wait_key();
 }
 
--- ゲームフィールドの初期化
-fn init_field() -> () {
-  clear();
-  draw_hline(30);
-}
-
 -- ============================================================
 -- メイン
---
--- 関数型的に書きたいが、以下の制約でインライン展開が必要:
---   1. 関数呼び出し時にレジスタが破壊される (issue #6)
---      → draw_piece(piece, x, y) を関数化できない
---   2. match 式がない
---      → piece ごとの分岐が if チェーンになる
---   3. sum type がない
---      → piece を u8 で表現せざるを得ない
---
--- 理想形 (issue が解決された場合):
---   let col = try_move(piece, px, py, px, py + 2);
---   match col {
---     Collided => { land_piece(piece, px, py); spawn_new_piece(); }
---     Free => ()
---   };
 -- ============================================================
 
 fn main() -> () {
   title_screen();
   init_field();
 
-  -- ゲーム状態 (8 変数 / 上限 10)
   let score: u8 = 0;
   let px: u8 = 28;
   let py: u8 = 0;
@@ -101,133 +94,52 @@ fn main() -> () {
   let col: bool = false;
 
   draw_digit(score, 56, 0);
-  draw(piece_t, px, py);
+  draw_piece(piece, px, py);
   set_delay(speed);
 
   loop {
     if alive == 0 { break; };
 
-    -- ============================================================
-    -- 落下ステップ: delay() == 0 のとき 1 行落下
-    -- ============================================================
+    -- 落下ステップ
     dt = delay();
     if dt == 0 {
-
-      -- erase_piece(piece, px, py)
-      -- ※ match piece { I => draw(piece_i, ..), O => draw(piece_o, ..), ... } と書きたい
-      if piece == 0 { draw(piece_i, px, py); };
-      if piece == 1 { draw(piece_o, px, py); };
-      if piece == 2 { draw(piece_t, px, py); };
-      if piece == 3 { draw(piece_s, px, py); };
-      if piece == 4 { draw(piece_z, px, py); };
-      if piece == 5 { draw(piece_l, px, py); };
-      if piece == 6 { draw(piece_j, px, py); };
-
+      draw_piece(piece, px, py);
       py = py + 2;
-
-      -- col = draw_piece(piece, px, py)
-      col = false;
-      if piece == 0 { col = draw(piece_i, px, py); };
-      if piece == 1 { col = draw(piece_o, px, py); };
-      if piece == 2 { col = draw(piece_t, px, py); };
-      if piece == 3 { col = draw(piece_s, px, py); };
-      if piece == 4 { col = draw(piece_z, px, py); };
-      if piece == 5 { col = draw(piece_l, px, py); };
-      if piece == 6 { col = draw(piece_j, px, py); };
+      col = draw_piece(piece, px, py);
 
       if col {
-        -- 衝突: undo_move → land_piece → spawn_piece
-        -- undo: erase_piece(piece, px, py)
-        if piece == 0 { draw(piece_i, px, py); };
-        if piece == 1 { draw(piece_o, px, py); };
-        if piece == 2 { draw(piece_t, px, py); };
-        if piece == 3 { draw(piece_s, px, py); };
-        if piece == 4 { draw(piece_z, px, py); };
-        if piece == 5 { draw(piece_l, px, py); };
-        if piece == 6 { draw(piece_j, px, py); };
-
-        -- land: draw_piece(piece, px, py - 2)
+        -- 衝突: undo → land → update score → spawn
+        draw_piece(piece, px, py);
         py = py - 2;
-        if piece == 0 { draw(piece_i, px, py); };
-        if piece == 1 { draw(piece_o, px, py); };
-        if piece == 2 { draw(piece_t, px, py); };
-        if piece == 3 { draw(piece_s, px, py); };
-        if piece == 4 { draw(piece_z, px, py); };
-        if piece == 5 { draw(piece_l, px, py); };
-        if piece == 6 { draw(piece_j, px, py); };
+        draw_piece(piece, px, py);
 
-        -- update_score
         set_sound(2);
         draw_digit(score, 56, 0);
         score = score + 1;
         draw_digit(score, 56, 0);
         if speed > 8 { speed = speed - 3; };
 
-        -- spawn_piece
         piece = random(7);
         if piece > 6 { piece = 0; };
         px = 28;
         py = 0;
-
-        -- col = draw_piece(piece, px, py)
-        col = false;
-        if piece == 0 { col = draw(piece_i, px, py); };
-        if piece == 1 { col = draw(piece_o, px, py); };
-        if piece == 2 { col = draw(piece_t, px, py); };
-        if piece == 3 { col = draw(piece_s, px, py); };
-        if piece == 4 { col = draw(piece_z, px, py); };
-        if piece == 5 { col = draw(piece_l, px, py); };
-        if piece == 6 { col = draw(piece_j, px, py); };
-
+        col = draw_piece(piece, px, py);
         if col { alive = 0; };
       };
 
       set_delay(speed);
     };
 
-    -- ============================================================
-    -- 入力処理: try_move(piece, px, py, new_px, py)
-    -- ※ 関数化できれば左右で共通化できる
-    -- ============================================================
-
     -- 左移動 (Q = key 4)
     if is_key_pressed(4) {
       if px > 2 {
-        -- erase
-        if piece == 0 { draw(piece_i, px, py); };
-        if piece == 1 { draw(piece_o, px, py); };
-        if piece == 2 { draw(piece_t, px, py); };
-        if piece == 3 { draw(piece_s, px, py); };
-        if piece == 4 { draw(piece_z, px, py); };
-        if piece == 5 { draw(piece_l, px, py); };
-        if piece == 6 { draw(piece_j, px, py); };
-        -- try new position
+        draw_piece(piece, px, py);
         px = px - 2;
-        col = false;
-        if piece == 0 { col = draw(piece_i, px, py); };
-        if piece == 1 { col = draw(piece_o, px, py); };
-        if piece == 2 { col = draw(piece_t, px, py); };
-        if piece == 3 { col = draw(piece_s, px, py); };
-        if piece == 4 { col = draw(piece_z, px, py); };
-        if piece == 5 { col = draw(piece_l, px, py); };
-        if piece == 6 { col = draw(piece_j, px, py); };
-        -- revert if collision
+        col = draw_piece(piece, px, py);
         if col {
-          if piece == 0 { draw(piece_i, px, py); };
-          if piece == 1 { draw(piece_o, px, py); };
-          if piece == 2 { draw(piece_t, px, py); };
-          if piece == 3 { draw(piece_s, px, py); };
-          if piece == 4 { draw(piece_z, px, py); };
-          if piece == 5 { draw(piece_l, px, py); };
-          if piece == 6 { draw(piece_j, px, py); };
+          draw_piece(piece, px, py);
           px = px + 2;
-          if piece == 0 { draw(piece_i, px, py); };
-          if piece == 1 { draw(piece_o, px, py); };
-          if piece == 2 { draw(piece_t, px, py); };
-          if piece == 3 { draw(piece_s, px, py); };
-          if piece == 4 { draw(piece_z, px, py); };
-          if piece == 5 { draw(piece_l, px, py); };
-          if piece == 6 { draw(piece_j, px, py); };
+          draw_piece(piece, px, py);
         };
       };
     };
@@ -235,38 +147,13 @@ fn main() -> () {
     -- 右移動 (R = key 6)
     if is_key_pressed(6) {
       if px < 56 {
-        if piece == 0 { draw(piece_i, px, py); };
-        if piece == 1 { draw(piece_o, px, py); };
-        if piece == 2 { draw(piece_t, px, py); };
-        if piece == 3 { draw(piece_s, px, py); };
-        if piece == 4 { draw(piece_z, px, py); };
-        if piece == 5 { draw(piece_l, px, py); };
-        if piece == 6 { draw(piece_j, px, py); };
+        draw_piece(piece, px, py);
         px = px + 2;
-        col = false;
-        if piece == 0 { col = draw(piece_i, px, py); };
-        if piece == 1 { col = draw(piece_o, px, py); };
-        if piece == 2 { col = draw(piece_t, px, py); };
-        if piece == 3 { col = draw(piece_s, px, py); };
-        if piece == 4 { col = draw(piece_z, px, py); };
-        if piece == 5 { col = draw(piece_l, px, py); };
-        if piece == 6 { col = draw(piece_j, px, py); };
+        col = draw_piece(piece, px, py);
         if col {
-          if piece == 0 { draw(piece_i, px, py); };
-          if piece == 1 { draw(piece_o, px, py); };
-          if piece == 2 { draw(piece_t, px, py); };
-          if piece == 3 { draw(piece_s, px, py); };
-          if piece == 4 { draw(piece_z, px, py); };
-          if piece == 5 { draw(piece_l, px, py); };
-          if piece == 6 { draw(piece_j, px, py); };
+          draw_piece(piece, px, py);
           px = px - 2;
-          if piece == 0 { draw(piece_i, px, py); };
-          if piece == 1 { draw(piece_o, px, py); };
-          if piece == 2 { draw(piece_t, px, py); };
-          if piece == 3 { draw(piece_s, px, py); };
-          if piece == 4 { draw(piece_z, px, py); };
-          if piece == 5 { draw(piece_l, px, py); };
-          if piece == 6 { draw(piece_j, px, py); };
+          draw_piece(piece, px, py);
         };
       };
     };
