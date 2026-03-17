@@ -1,12 +1,15 @@
--- tetris.ch8l: CHIP-8 TETRIS (関数型スタイル)
+-- tetris.ch8l: CHIP-8 TETRIS (完全関数型)
 --
--- Piece enum + match + random_enum + try_move 関数化
+-- 不変 GameState struct + 純粋関数 + 末尾再帰ゲームループ
 
 -- ============================================================
 -- 型定義
 -- ============================================================
 
 enum Piece { I, O, T, S, Z, L, J }
+
+struct Pos { x: u8, y: u8 }
+struct GameState { piece: Piece, pos: Pos, score: u8, speed: u8 }
 
 -- ============================================================
 -- スプライトデータ
@@ -22,32 +25,31 @@ let piece_j: sprite(4) = [0b00110000, 0b00110000, 0b11111100, 0b11111100];
 let floor: sprite(1) = [0b11111111];
 
 -- ============================================================
--- ピース描画 (enum + match)
+-- ピース描画
 -- ============================================================
 
-fn draw_piece(p: Piece, x: u8, y: u8) -> bool {
-  match p {
-    Piece::I => draw(piece_i, x, y),
-    Piece::O => draw(piece_o, x, y),
-    Piece::T => draw(piece_t, x, y),
-    Piece::S => draw(piece_s, x, y),
-    Piece::Z => draw(piece_z, x, y),
-    Piece::L => draw(piece_l, x, y),
-    Piece::J => draw(piece_j, x, y),
+fn draw_piece(piece: Piece, pos: Pos) -> bool {
+  match piece {
+    Piece::I => draw(piece_i, pos.x, pos.y),
+    Piece::O => draw(piece_o, pos.x, pos.y),
+    Piece::T => draw(piece_t, pos.x, pos.y),
+    Piece::S => draw(piece_s, pos.x, pos.y),
+    Piece::Z => draw(piece_z, pos.x, pos.y),
+    Piece::L => draw(piece_l, pos.x, pos.y),
+    Piece::J => draw(piece_j, pos.x, pos.y),
   }
 }
 
--- 移動試行: erase → draw → (衝突なら revert)
--- 成功なら true、失敗なら false を返す
-fn try_move(p: Piece, ox: u8, oy: u8, nx: u8, ny: u8) -> bool {
-  draw_piece(p, ox, oy);
-  let col: bool = draw_piece(p, nx, ny);
+-- 移動試行: 成功なら new、失敗なら old を返す
+fn try_move(piece: Piece, old: Pos, new: Pos) -> Pos {
+  draw_piece(piece, old);
+  let col: bool = draw_piece(piece, new);
   if col {
-    draw_piece(p, nx, ny);
-    draw_piece(p, ox, oy);
-    false
+    draw_piece(piece, new);
+    draw_piece(piece, old);
+    old
   } else {
-    true
+    new
   }
 }
 
@@ -90,7 +92,93 @@ fn gameover_screen(score: u8) -> () {
 }
 
 -- ============================================================
--- メイン
+-- ゲームロジック (小さな純粋関数に分割)
+-- ============================================================
+
+fn next_speed(speed: u8) -> u8 {
+  if speed > 8 { speed - 3 } else { speed }
+}
+
+-- 着地処理: 新ピース生成 + スコア更新 (speed=0 でゲームオーバー)
+fn on_land(state: GameState) -> GameState {
+  set_sound(2);
+  draw_digit(state.score, 56, 0);
+  draw_digit(state.score + 1, 56, 0);
+
+  let p: Piece = random_enum(Piece);
+  let col: bool = draw_piece(p, Pos { x: 28, y: 0 });
+  if col {
+    GameState { piece: p, pos: Pos { x: 28, y: 0 }, score: state.score + 1, speed: 0 }
+  } else {
+    let spd: u8 = next_speed(state.speed);
+    set_delay(spd);
+    GameState { piece: p, pos: Pos { x: 28, y: 0 }, score: state.score + 1, speed: spd }
+  }
+}
+
+-- 落下処理
+fn handle_fall(state: GameState) -> GameState {
+  if delay() == 0 {
+    let px: u8 = state.pos.x;
+    let py: u8 = state.pos.y;
+    let new_pos: Pos = try_move(state.piece, state.pos, Pos { x: px, y: py + 2 });
+    if new_pos == state.pos {
+      on_land(state)
+    } else {
+      set_delay(state.speed);
+      GameState { ..state, pos: new_pos }
+    }
+  } else {
+    state
+  }
+}
+
+-- 左移動
+fn try_left(state: GameState) -> GameState {
+  if state.pos.x > 2 {
+    let p: Pos = try_move(state.piece, state.pos, Pos { x: state.pos.x - 2, y: state.pos.y });
+    GameState { ..state, pos: p }
+  } else { state }
+}
+
+-- 右移動
+fn try_right(state: GameState) -> GameState {
+  if state.pos.x < 56 {
+    let p: Pos = try_move(state.piece, state.pos, Pos { x: state.pos.x + 2, y: state.pos.y });
+    GameState { ..state, pos: p }
+  } else { state }
+}
+
+-- 入力処理
+fn handle_input(state: GameState) -> GameState {
+  if is_key_pressed(4) { return try_left(state); };
+  if is_key_pressed(6) { return try_right(state); };
+  if is_key_pressed(8) { set_delay(1); };
+  state
+}
+
+-- 1フレーム: 落下 → 入力
+fn tick(state: GameState) -> GameState {
+  let s: GameState = handle_fall(state);
+  if s.speed == 0 { return s; };
+  handle_input(s)
+}
+
+-- ============================================================
+-- ゲームループ (末尾再帰 → TCO)
+-- ============================================================
+
+fn game_loop(state: GameState) -> () {
+  let next: GameState = tick(state);
+  if next.speed > 0 {
+    game_loop(next)
+  } else {
+    gameover_screen(next.score)
+  }
+}
+
+-- ============================================================
+-- エントリーポイント
 -- ============================================================
 
 fn main() -> () {
@@ -98,60 +186,16 @@ fn main() -> () {
   clear();
   draw_hline(30);
 
-  let piece: Piece = Piece::T;
-  let px: u8 = 28;
-  let py: u8 = 0;
-  let score: u8 = 0;
-  let speed: u8 = 25;
-
-  draw_digit(score, 56, 0);
-  draw_piece(piece, px, py);
-  set_delay(speed);
-
-  loop {
-    -- 落下ステップ
-    if delay() == 0 {
-      if try_move(piece, px, py, px, py + 2) {
-        py = py + 2;
-      } else {
-        -- 着地
-        set_sound(2);
-        draw_digit(score, 56, 0);
-        score = score + 1;
-        draw_digit(score, 56, 0);
-        if speed > 8 { speed = speed - 3; };
-
-        -- 新ピース生成
-        piece = random_enum(Piece);
-        px = 28;
-        py = 0;
-        if draw_piece(piece, px, py) { break; };
-      };
-
-      set_delay(speed);
-    };
-
-    -- 左移動 (Q = key 4)
-    if is_key_pressed(4) {
-      if px > 2 {
-        if try_move(piece, px, py, px - 2, py) {
-          px = px - 2;
-        };
-      };
-    };
-
-    -- 右移動 (R = key 6)
-    if is_key_pressed(6) {
-      if px < 56 {
-        if try_move(piece, px, py, px + 2, py) {
-          px = px + 2;
-        };
-      };
-    };
-
-    -- 即落下 (S = key 8)
-    if is_key_pressed(8) { set_delay(1); };
+  let initial: GameState = GameState {
+    piece: Piece::T,
+    pos: Pos { x: 28, y: 0 },
+    score: 0,
+    speed: 25,
   };
 
-  gameover_screen(score);
+  draw_digit(initial.score, 56, 0);
+  draw_piece(initial.piece, initial.pos);
+  set_delay(initial.speed);
+
+  game_loop(initial);
 }
