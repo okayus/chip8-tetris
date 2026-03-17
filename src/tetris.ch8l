@@ -1,7 +1,8 @@
 -- tetris.ch8l: CHIP-8 TETRIS
 --
 -- match 式 + 関数抽出によるリファクタリング
--- draw_piece() を関数化し、7-way if チェーン (77行) を match (7行) に集約
+-- draw_piece は衝突フラグの戻り値バグ (chip8-lang #23) のため
+-- 消去用 (void) のみ関数化。衝突チェックはインラインの match で実施。
 
 -- ============================================================
 -- スプライトデータ
@@ -17,11 +18,10 @@ let piece_j: sprite(4) = [0b00110000, 0b00110000, 0b11111100, 0b11111100];
 let floor: sprite(1) = [0b11111111];
 
 -- ============================================================
--- ピース描画 (match 式でディスパッチ)
+-- ピース消去 (戻り値を使わないので関数化安全)
 -- ============================================================
 
--- ピースを描画し、衝突フラグを返す (XOR 描画)
-fn draw_piece(p: u8, x: u8, y: u8) -> bool {
+fn erase_piece(p: u8, x: u8, y: u8) -> () {
   match p {
     0 => draw(piece_i, x, y),
     1 => draw(piece_o, x, y),
@@ -30,7 +30,7 @@ fn draw_piece(p: u8, x: u8, y: u8) -> bool {
     4 => draw(piece_z, x, y),
     5 => draw(piece_l, x, y),
     6 => draw(piece_j, x, y),
-  }
+  };
 }
 
 -- ============================================================
@@ -78,6 +78,9 @@ fn gameover_screen(score: u8) -> () {
 
 -- ============================================================
 -- メイン
+--
+-- 衝突チェック付き描画は関数の戻り値バグ (#23) のためインライン match で実施。
+-- #23 が修正されれば draw_piece() -> bool に統合可能。
 -- ============================================================
 
 fn main() -> () {
@@ -94,7 +97,7 @@ fn main() -> () {
   let col: bool = false;
 
   draw_digit(score, 56, 0);
-  draw_piece(piece, px, py);
+  erase_piece(piece, px, py);
   set_delay(speed);
 
   loop {
@@ -103,15 +106,24 @@ fn main() -> () {
     -- 落下ステップ
     dt = delay();
     if dt == 0 {
-      draw_piece(piece, px, py);
+      erase_piece(piece, px, py);
       py = py + 2;
-      col = draw_piece(piece, px, py);
+
+      -- 衝突チェック付き描画 (インライン match)
+      col = match piece {
+        0 => draw(piece_i, px, py),
+        1 => draw(piece_o, px, py),
+        2 => draw(piece_t, px, py),
+        3 => draw(piece_s, px, py),
+        4 => draw(piece_z, px, py),
+        5 => draw(piece_l, px, py),
+        6 => draw(piece_j, px, py),
+      };
 
       if col {
-        -- 衝突: undo → land → update score → spawn
-        draw_piece(piece, px, py);
+        erase_piece(piece, px, py);
         py = py - 2;
-        draw_piece(piece, px, py);
+        erase_piece(piece, px, py);
 
         set_sound(2);
         draw_digit(score, 56, 0);
@@ -123,7 +135,16 @@ fn main() -> () {
         if piece > 6 { piece = 0; };
         px = 28;
         py = 0;
-        col = draw_piece(piece, px, py);
+
+        col = match piece {
+          0 => draw(piece_i, px, py),
+          1 => draw(piece_o, px, py),
+          2 => draw(piece_t, px, py),
+          3 => draw(piece_s, px, py),
+          4 => draw(piece_z, px, py),
+          5 => draw(piece_l, px, py),
+          6 => draw(piece_j, px, py),
+        };
         if col { alive = 0; };
       };
 
@@ -133,13 +154,21 @@ fn main() -> () {
     -- 左移動 (Q = key 4)
     if is_key_pressed(4) {
       if px > 2 {
-        draw_piece(piece, px, py);
+        erase_piece(piece, px, py);
         px = px - 2;
-        col = draw_piece(piece, px, py);
+        col = match piece {
+          0 => draw(piece_i, px, py),
+          1 => draw(piece_o, px, py),
+          2 => draw(piece_t, px, py),
+          3 => draw(piece_s, px, py),
+          4 => draw(piece_z, px, py),
+          5 => draw(piece_l, px, py),
+          6 => draw(piece_j, px, py),
+        };
         if col {
-          draw_piece(piece, px, py);
+          erase_piece(piece, px, py);
           px = px + 2;
-          draw_piece(piece, px, py);
+          erase_piece(piece, px, py);
         };
       };
     };
@@ -147,13 +176,21 @@ fn main() -> () {
     -- 右移動 (R = key 6)
     if is_key_pressed(6) {
       if px < 56 {
-        draw_piece(piece, px, py);
+        erase_piece(piece, px, py);
         px = px + 2;
-        col = draw_piece(piece, px, py);
+        col = match piece {
+          0 => draw(piece_i, px, py),
+          1 => draw(piece_o, px, py),
+          2 => draw(piece_t, px, py),
+          3 => draw(piece_s, px, py),
+          4 => draw(piece_z, px, py),
+          5 => draw(piece_l, px, py),
+          6 => draw(piece_j, px, py),
+        };
         if col {
-          draw_piece(piece, px, py);
+          erase_piece(piece, px, py);
           px = px - 2;
-          draw_piece(piece, px, py);
+          erase_piece(piece, px, py);
         };
       };
     };
