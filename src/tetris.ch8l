@@ -106,32 +106,26 @@ fn draw_piece(piece: Piece, rot: u8, x: u8, y: u8) -> bool {
 -- ============================================================
 
 fn try_move(p: Piece, r: u8, ox: u8, oy: u8, nx: u8, ny: u8) -> bool {
-  begin_draw_batch();
   draw_piece(p, r, ox, oy);
   let col: bool = draw_piece(p, r, nx, ny);
   if col {
     draw_piece(p, r, nx, ny);
     draw_piece(p, r, ox, oy);
-    end_draw_batch();
     false
   } else {
-    end_draw_batch();
     true
   }
 }
 
 fn try_rotate(p: Piece, r: u8, x: u8, y: u8) -> u8 {
   let nr: u8 = if r == 3 { 0 } else { r + 1 };
-  begin_draw_batch();
   draw_piece(p, r, x, y);
   let col: bool = draw_piece(p, nr, x, y);
   if col {
     draw_piece(p, nr, x, y);
     draw_piece(p, r, x, y);
-    end_draw_batch();
     r
   } else {
-    end_draw_batch();
     nr
   }
 }
@@ -232,7 +226,7 @@ fn handle_key8(state: GameState) -> GameState {
 }
 
 fn handle_key5(state: GameState) -> GameState {
-  if is_key_just_pressed(5) {
+  if is_key_pressed(5) {
     let p: Piece = state.piece;
     let r: u8 = state.rot;
     let x: u8 = state.x;
