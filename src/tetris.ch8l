@@ -51,9 +51,10 @@ let j_r1: sprite(4) = [0x20, 0xE0, 0x00, 0x00];
 let j_r2: sprite(4) = [0xC0, 0x40, 0x40, 0x00];
 let j_r3: sprite(4) = [0x00, 0xE0, 0x80, 0x00];
 
--- 壁・床
+-- 壁・床・フラグ
 let wall: sprite(1) = [0x80];
 let floor: sprite(1) = [0xFF];
+let flag: sprite(1) = [0x80];
 
 -- ============================================================
 -- ピース描画 (nested match: piece × rotation)
@@ -225,18 +226,63 @@ fn handle_key8(state: GameState) -> GameState {
   state
 }
 
+-- 回転ロック: (63,0) のピクセルで状態管理
+-- ON = ロック中, OFF = 解放済み
+
+fn is_rot_locked() -> bool {
+  let col: bool = draw(flag, 63, 0);
+  if col {
+    draw(flag, 63, 0);
+    true
+  } else {
+    draw(flag, 63, 0);
+    false
+  }
+}
+
+fn set_rot_lock() -> () {
+  let col: bool = draw(flag, 63, 0);
+  if col {
+    -- 既に ON → そのまま (XOR で消えたので再描画)
+    draw(flag, 63, 0);
+  } else {
+    -- OFF → ON に設定された、そのまま
+  }
+}
+
+fn clear_rot_lock() -> () {
+  let col: bool = draw(flag, 63, 0);
+  if col {
+    -- ON → OFF に消去された、そのまま
+  } else {
+    -- 既に OFF → そのまま (XOR で付いたので再消去)
+    draw(flag, 63, 0);
+  }
+}
+
+fn do_rotate(state: GameState) -> GameState {
+  let p: Piece = state.piece;
+  let r: u8 = state.rot;
+  let x: u8 = state.x;
+  let y: u8 = state.y;
+  let sc: u8 = state.score;
+  let sp: u8 = state.speed;
+  let nr: u8 = try_rotate(p, r, x, y);
+  if nr == r { state }
+  else { GameState { piece: p, rot: nr, x: x, y: y, score: sc, speed: sp } }
+}
+
 fn handle_key5(state: GameState) -> GameState {
   if is_key_pressed(5) {
-    let p: Piece = state.piece;
-    let r: u8 = state.rot;
-    let x: u8 = state.x;
-    let y: u8 = state.y;
-    let sc: u8 = state.score;
-    let sp: u8 = state.speed;
-    let nr: u8 = try_rotate(p, r, x, y);
-    if nr == r { state }
-    else { GameState { piece: p, rot: nr, x: x, y: y, score: sc, speed: sp } }
-  } else { handle_key8(state) }
+    if is_rot_locked() { state }
+    else {
+      set_rot_lock();
+      do_rotate(state)
+    }
+  } else {
+    clear_rot_lock();
+    handle_key8(state)
+  }
 }
 
 fn handle_key6(state: GameState) -> GameState {
