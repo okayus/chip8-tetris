@@ -5,19 +5,15 @@ chip8-lang (自作関数型言語) で書かれた CHIP-8 TETRIS。
 ## 概要
 
 - ソース: `src/tetris.ch8l`
-- ROM 出力: `rom/tetris.ch8`
+- ROM 出力: `src/tetris.ch8` (コンパイラが同ディレクトリに出力)
 - 設計: `docs/DESIGN.md`
-- コンパイラ: `../chip8-lang/` (chip8-lang)
-- エミュレータ: `../chip8-ts/` (chip8-ts)
+- 関数型設計の経緯: `docs/FUNCTIONAL_TETRIS.md`
 
 ## コマンド
 
 ```bash
 # コンパイル
 cargo run --manifest-path ../chip8-lang/Cargo.toml -- src/tetris.ch8l
-
-# エミュレータで確認 (chip8-ts)
-# rom/tetris.ch8 を chip8-ts の public/roms/ にコピーして起動
 ```
 
 ## 開発フロー
