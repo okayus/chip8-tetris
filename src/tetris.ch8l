@@ -1,10 +1,11 @@
--- tetris.ch8l: CHIP-8 TETRIS (完全関数型)
+-- tetris.ch8l: CHIP-8 TETRIS (関数型)
 --
 -- リファレンス TETRIS.ch8 準拠: 1px/cell, 回転対応, 壁描画
--- レジスタ圧力を考慮した設計:
---   - ヘルパーはスカラーパラメータ
---   - 入力処理はチェーン方式 (1関数1キー)
---   - struct フィールドは冒頭で一度だけ抽出
+-- 関数型設計:
+--   - GameState struct による不変状態管理
+--   - |> パイプ演算子で状態変換を連鎖
+--   - 末尾再帰 (TCO) によるゲームループ
+--   - ヘルパーはスカラーパラメータ (レジスタ圧力回避)
 
 -- ============================================================
 -- 型定義
@@ -190,7 +191,9 @@ fn spawn_piece(np: Piece, sc: u8, sp: u8) -> GameState {
   }
 }
 
-fn on_land(sc: u8, sp: u8) -> GameState {
+fn land_and_spawn(state: GameState) -> GameState {
+  let sc: u8 = state.score;
+  let sp: u8 = state.speed;
   set_sound(2);
   update_score(sc);
   let np: Piece = random_enum(Piece);
@@ -208,26 +211,19 @@ fn handle_fall(state: GameState) -> GameState {
   let y: u8 = state.y;
   let sc: u8 = state.score;
   let sp: u8 = state.speed;
-  let ok: bool = try_move(p, r, x, y, x, y + 1);
+  let ny: u8 = y + 1;
+  let ok: bool = try_move(p, r, x, y, x, ny);
   if ok {
     set_delay(sp);
     GameState { piece: p, rot: r, x: x, y: y + 1, score: sc, speed: sp }
   } else {
-    on_land(sc, sp)
+    state |> land_and_spawn
   }
 }
 
 -- ============================================================
--- 入力処理 (チェーン方式: 1関数1キー)
--- ============================================================
-
-fn handle_key8(state: GameState) -> GameState {
-  if is_key_pressed(8) { set_delay(1); };
-  state
-}
-
 -- 回転ロック: (63,0) のピクセルで状態管理
--- ON = ロック中, OFF = 解放済み
+-- ============================================================
 
 fn is_rot_locked() -> bool {
   let col: bool = draw(flag, 63, 0);
@@ -243,19 +239,15 @@ fn is_rot_locked() -> bool {
 fn set_rot_lock() -> () {
   let col: bool = draw(flag, 63, 0);
   if col {
-    -- 既に ON → そのまま (XOR で消えたので再描画)
     draw(flag, 63, 0);
   } else {
-    -- OFF → ON に設定された、そのまま
   }
 }
 
 fn clear_rot_lock() -> () {
   let col: bool = draw(flag, 63, 0);
   if col {
-    -- ON → OFF に消去された、そのまま
   } else {
-    -- 既に OFF → そのまま (XOR で付いたので再消去)
     draw(flag, 63, 0);
   }
 }
@@ -272,8 +264,28 @@ fn do_rotate(state: GameState) -> GameState {
   else { GameState { piece: p, rot: nr, x: x, y: y, score: sc, speed: sp } }
 }
 
-fn handle_key5(state: GameState) -> GameState {
-  if is_key_pressed(5) {
+-- ============================================================
+-- 入力処理 (統合: 全キーを単一関数で処理)
+-- ============================================================
+
+fn handle_input(state: GameState) -> GameState {
+  let p: Piece = state.piece;
+  let r: u8 = state.rot;
+  let x: u8 = state.x;
+  let y: u8 = state.y;
+  let sc: u8 = state.score;
+  let sp: u8 = state.speed;
+  if is_key_pressed(4) {
+    if x > 0 {
+      let ok: bool = try_move(p, r, x, y, x - 1, y);
+      if ok { GameState { piece: p, rot: r, x: x - 1, y: y, score: sc, speed: sp } }
+      else { state }
+    } else { state }
+  } else { if is_key_pressed(6) {
+    let ok: bool = try_move(p, r, x, y, x + 1, y);
+    if ok { GameState { piece: p, rot: r, x: x + 1, y: y, score: sc, speed: sp } }
+    else { state }
+  } else { if is_key_pressed(5) {
     if is_rot_locked() { state }
     else {
       set_rot_lock();
@@ -281,38 +293,9 @@ fn handle_key5(state: GameState) -> GameState {
     }
   } else {
     clear_rot_lock();
-    handle_key8(state)
-  }
-}
-
-fn handle_key6(state: GameState) -> GameState {
-  if is_key_pressed(6) {
-    let p: Piece = state.piece;
-    let r: u8 = state.rot;
-    let x: u8 = state.x;
-    let y: u8 = state.y;
-    let sc: u8 = state.score;
-    let sp: u8 = state.speed;
-    let ok: bool = try_move(p, r, x, y, x + 1, y);
-    if ok { GameState { piece: p, rot: r, x: x + 1, y: y, score: sc, speed: sp } }
-    else { state }
-  } else { handle_key5(state) }
-}
-
-fn handle_input(state: GameState) -> GameState {
-  if is_key_pressed(4) {
-    let p: Piece = state.piece;
-    let r: u8 = state.rot;
-    let x: u8 = state.x;
-    let y: u8 = state.y;
-    let sc: u8 = state.score;
-    let sp: u8 = state.speed;
-    if x > 0 {
-      let ok: bool = try_move(p, r, x, y, x - 1, y);
-      if ok { GameState { piece: p, rot: r, x: x - 1, y: y, score: sc, speed: sp } }
-      else { state }
-    } else { state }
-  } else { handle_key6(state) }
+    if is_key_pressed(8) { set_delay(1); };
+    state
+  }}}
 }
 
 -- ============================================================
@@ -328,17 +311,14 @@ fn tick(state: GameState) -> GameState {
 }
 
 -- ============================================================
--- ゲームループ (末尾再帰 → TCO)
+-- ゲームループ (|> パイプ + 末尾再帰 → TCO)
 -- ============================================================
 
 fn game_loop(state: GameState) -> () {
-  let sc: u8 = state.score;
-  let sp: u8 = state.speed;
-  if sp == 0 {
-    gameover_screen(sc)
+  if state.speed == 0 {
+    gameover_screen(state.score)
   } else {
-    let next: GameState = tick(state);
-    game_loop(next)
+    state |> tick |> game_loop
   }
 }
 
@@ -357,7 +337,7 @@ fn main() -> () {
     x: 4,
     y: 0,
     score: 0,
-    speed: 20,
+    speed: 60,
   };
 
   draw_digit(initial.score, 56, 0);
