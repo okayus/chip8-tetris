@@ -168,6 +168,65 @@ fn gameover_screen(score: u8) -> () {
 }
 
 -- ============================================================
+-- ライン消去
+-- ============================================================
+
+fn shift_rows_down(cy: u8) -> () {
+  let row: u8 = cy;
+  loop {
+    if row == 0 { break; };
+    let src: u8 = row - 1;
+    let rx: u8 = 1;
+    loop {
+      if rx > 10 { break; };
+      let dc: bool = draw(flag, rx, row);
+      if dc {} else { draw(flag, rx, row); };
+      let sc: bool = draw(flag, rx, src);
+      draw(flag, rx, src);
+      if sc { draw(flag, rx, row); } else {};
+      rx = rx + 1;
+    };
+    row = row - 1;
+  };
+  let cx: u8 = 1;
+  loop {
+    if cx > 10 { break; };
+    let col: bool = draw(flag, cx, 0);
+    if col {} else { draw(flag, cx, 0); };
+    cx = cx + 1;
+  };
+}
+
+fn clear_lines(base_y: u8) -> u8 {
+  let lines: u8 = 0;
+  let ry: u8 = base_y + 3;
+  if ry > 30 { ry = 30; } else {};
+  loop {
+    if lines == 4 { break; };
+    if ry < base_y { break; };
+    let rx: u8 = 1;
+    let full: bool = true;
+    loop {
+      if rx > 10 { break; };
+      if full {
+        let col: bool = draw(flag, rx, ry);
+        draw(flag, rx, ry);
+        if col {} else { full = false; };
+      } else {};
+      rx = rx + 1;
+    };
+    if full {
+      shift_rows_down(ry);
+      lines = lines + 1;
+    } else {
+      if ry == 0 { break; };
+      ry = ry - 1;
+    };
+  };
+  lines
+}
+
+-- ============================================================
 -- ゲームロジック
 -- ============================================================
 
@@ -175,9 +234,9 @@ fn next_speed(speed: u8) -> u8 {
   if speed > 5 { speed - 2 } else { speed }
 }
 
-fn update_score(score: u8) -> () {
-  draw_digit(score, 56, 0);
-  draw_digit(score + 1, 56, 0);
+fn update_score(old_sc: u8, new_sc: u8) -> () {
+  draw_digit(old_sc, 56, 0);
+  draw_digit(new_sc, 56, 0);
 }
 
 fn spawn_piece(np: Piece, sc: u8, sp: u8) -> GameState {
@@ -194,10 +253,13 @@ fn spawn_piece(np: Piece, sc: u8, sp: u8) -> GameState {
 fn land_and_spawn(state: GameState) -> GameState {
   let sc: u8 = state.score;
   let sp: u8 = state.speed;
+  let y: u8 = state.y;
   set_sound(2);
-  update_score(sc);
+  let lines: u8 = clear_lines(y);
+  let new_sc: u8 = sc + 1 + lines;
+  update_score(sc, new_sc);
   let np: Piece = random_enum(Piece);
-  spawn_piece(np, sc + 1, sp)
+  spawn_piece(np, new_sc, sp)
 }
 
 -- ============================================================
